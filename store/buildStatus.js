@@ -37,11 +37,23 @@ module.exports = function buildStatus(db, redis, cb) {
     retriever_matches_last_day(cb) {
       utility.getRedisCountDay(redis, 'retriever', cb);
     },
+    backup_retriever_last_day(cb) {
+      utility.getRedisCountDay(redis, 'backup', cb);
+    },
     parsed_matches_last_day(cb) {
       utility.getRedisCountDay(redis, 'parser', cb);
     },
     requests_last_day(cb) {
       utility.getRedisCountDay(redis, 'request', cb);
+    },
+    fullhistory_last_day(cb) {
+      utility.getRedisCountDay(redis, 'fullhistory', cb);
+    },
+    webhooks_last_day(cb) {
+      utility.getRedisCountDay(redis, 'webhook', cb);
+    },
+    feed_last_day(cb) {
+      utility.getRedisCountDay(redis, 'feed', cb);
     },
     api_hits_last_day(cb) {
       utility.getRedisCountDay(redis, 'api_hits', cb);
@@ -63,6 +75,9 @@ module.exports = function buildStatus(db, redis, cb) {
     },
     scenariosQueue(cb) {
       redis.llen('scenariosQueue', cb);
+    },
+    benchmarksQueue(cb) {
+      redis.llen('parsedBenchmarksQueue', cb);
     },
     retriever(cb) {
       redis.zrangebyscore('retrieverCounts', '-inf', 'inf', 'WITHSCORES', (err, results) => {

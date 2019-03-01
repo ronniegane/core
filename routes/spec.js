@@ -1,33 +1,34 @@
 const async = require('async');
 const constants = require('dotaconstants');
+const moment = require('moment');
 const config = require('../config');
 // const crypto = require('crypto');
-const moment = require('moment');
 // const uuidV4 = require('uuid/v4');
 const queue = require('../store/queue');
 const queries = require('../store/queries');
 const search = require('../store/search');
+const searchES = require('../store/searchES');
 const buildMatch = require('../store/buildMatch');
 const buildStatus = require('../store/buildStatus');
-const queryRaw = require('../store/queryRaw');
+const explorerQuery = require('../store/explorerQuery');
 const playerFields = require('./playerFields');
 const getGcData = require('../util/getGcData');
 const utility = require('../util/utility');
 const su = require('../util/scenariosUtil');
+const filter = require('../util/filter');
 const db = require('../store/db');
 const redis = require('../store/redis');
 const packageJson = require('../package.json');
 const cacheFunctions = require('../store/cacheFunctions');
 const params = require('./params');
 const properties = require('./properties');
+
 const {
   teamObject, matchObject, heroObject, playerObject,
 } = require('./objects');
 
-const redisCount = utility.redisCount;
-const subkeys = playerFields.subkeys;
-const countCats = playerFields.countCats;
-const countPeers = utility.countPeers;
+const { redisCount, countPeers, isContributor } = utility;
+const { subkeys, countCats } = playerFields;
 const playerParams = [
   params.accountIdParam,
   params.limitParam,
@@ -66,10 +67,22 @@ const spec = {
   info: {
     title: 'OpenDota API',
     description: `# Introduction
-This API provides Dota 2 related data.
-Please keep request rate to approximately 3/s.
+The OpenDota API provides Dota 2 related data including advanced match data extracted from match replays.
+
+**Beginning 2018-04-22, the OpenDota API is limited to 50,000 free calls per month and 60 requests/minute** We offer a Premium Tier with unlimited API calls and higher rate limits. Check out the [API page](https://www.opendota.com/api-keys) to learn more.
 `,
     version: packageJson.version,
+  },
+  securityDefinitions: {
+    api_key: {
+      type: 'apiKey',
+      name: 'api_key',
+      description: `Use an API key to remove monthly call limits and to receive higher rate limits. [Learn more and get your API key](https://www.opendota.com/api-keys).
+
+      Usage example: https://api.opendota.com/api/matches/271145478?api_key=YOUR-API-KEY
+      `,
+      in: 'query',
+    },
   },
   host: 'api.opendota.com',
   basePath: '/api',
@@ -145,7 +158,7 @@ Please keep request rate to approximately 3/s.
                   description: 'draft_timings',
                   type: 'array',
                   items: {
-                    decription: 'draft_stage',
+                    description: 'draft_stage',
                     type: 'object',
                     properties: {
                       order: {
@@ -161,7 +174,7 @@ Please keep request rate to approximately 3/s.
                         type: 'integer',
                       },
                       hero_id: {
-                        decription: 'The ID value of the hero played',
+                        description: 'The ID value of the hero played',
                         type: 'integer',
                       },
                       player_slot: properties.player_slot,
@@ -363,6 +376,24 @@ Please keep request rate to approximately 3/s.
                         description: 'Number of camps stacked',
                         type: 'integer',
                       },
+                      connection_log: {
+                        description: 'Array containing information about the player\'s disconnections and reconnections',
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            time: {
+                              description: 'Game time in seconds the event ocurred',
+                              type: 'integer',
+                            },
+                            event: {
+                              description: 'Event that occurred',
+                              type: 'string',
+                            },
+                            player_slot: properties.player_slot,
+                          },
+                        },
+                      },
                       creeps_stacked: {
                         description: 'Number of creeps stacked',
                         type: 'integer',
@@ -434,7 +465,7 @@ Please keep request rate to approximately 3/s.
                         type: 'object',
                       },
                       hero_id: {
-                        decription: 'The ID value of the hero played',
+                        description: 'The ID value of the hero played',
                         type: 'integer',
                       },
                       item_0: {
@@ -868,19 +899,27 @@ Please keep request rate to approximately 3/s.
                   type: 'integer',
                 },
                 all_word_counts: {
-                  description: 'all_word_counts',
+                  description: 'Word counts of the all chat messages in the player\'s games',
                   type: 'object',
                 },
                 my_word_counts: {
-                  description: 'my_word_counts',
+                  description: 'Word counts of the player\'s all chat messages',
                   type: 'object',
                 },
                 throw: {
-                  description: 'throw',
+                  description: 'Maximum gold advantage of the player\'s team if they lost the match',
+                  type: 'integer',
+                },
+                comeback: {
+                  description: 'Maximum gold disadvantage of the player\'s team if they won the match',
                   type: 'integer',
                 },
                 loss: {
-                  description: 'loss',
+                  description: 'Maximum gold disadvantage of the player\'s team if they lost the match',
+                  type: 'integer',
+                },
+                win: {
+                  description: 'Maximum gold advantage of the player\'s team if they won the match',
                   type: 'integer',
                 },
                 replay_url: {
@@ -892,16 +931,16 @@ Please keep request rate to approximately 3/s.
           },
         },
         route: () => '/matches/:match_id/:info?',
-        func: (req, res, cb) => {
-          buildMatch(req.params.match_id, (err, match) => {
-            if (err) {
-              return cb(err);
-            }
+        func: async (req, res, cb) => {
+          try {
+            const match = await buildMatch(req.params.match_id, req.query);
             if (!match) {
               return cb();
             }
             return res.json(match);
-          });
+          } catch (err) {
+            return cb(err);
+          }
         },
       },
     },
@@ -1005,6 +1044,11 @@ Please keep request rate to approximately 3/s.
                       description: 'loccountrycode',
                       type: 'string',
                     },
+                    is_contributor: {
+                      description: 'Boolean indicating if the user contributed to the development of OpenDota',
+                      type: 'boolean',
+                      default: false,
+                    },
                   },
                 },
               },
@@ -1016,7 +1060,12 @@ Please keep request rate to approximately 3/s.
           const accountId = Number(req.params.account_id);
           async.parallel({
             profile(cb) {
-              queries.getPlayer(db, accountId, cb);
+              queries.getPlayer(db, accountId, (err, playerData) => {
+                if (playerData !== null && playerData !== undefined) {
+                  playerData.is_contributor = isContributor(accountId);
+                }
+                cb(err, playerData);
+              });
             },
             tracked_until(cb) {
               redis.zscore('tracked', accountId, cb);
@@ -1109,7 +1158,7 @@ Please keep request rate to approximately 3/s.
         tags: [
           'players',
         ],
-        parameters: [],
+        parameters: [params.accountIdParam],
         responses: {
           200: {
             description: 'Success',
@@ -1135,7 +1184,7 @@ Please keep request rate to approximately 3/s.
                     type: 'integer',
                   },
                   hero_id: {
-                    decription: 'The ID value of the hero played',
+                    description: 'The ID value of the hero played',
                     type: 'integer',
                   },
                   start_time: {
@@ -1261,7 +1310,7 @@ Please keep request rate to approximately 3/s.
                     type: 'integer',
                   },
                   hero_id: {
-                    decription: 'The ID value of the hero played',
+                    description: 'The ID value of the hero played',
                     type: 'integer',
                   },
                   start_time: {
@@ -1305,7 +1354,7 @@ Please keep request rate to approximately 3/s.
                             type: 'integer',
                           },
                           hero_id: {
-                            decription: 'The ID value of the hero played',
+                            description: 'The ID value of the hero played',
                             type: 'integer',
                           },
                           player_slot: properties.player_slot,
@@ -1348,7 +1397,7 @@ Please keep request rate to approximately 3/s.
                 type: 'object',
                 properties: {
                   hero_id: {
-                    decription: 'The ID value of the hero played',
+                    description: 'The ID value of the hero played',
                     type: 'integer',
                   },
                   last_played: {
@@ -1407,7 +1456,7 @@ Please keep request rate to approximately 3/s.
               return cb(err);
             }
             cache.forEach((m) => {
-              const isRadiant = utility.isRadiant;
+              const { isRadiant } = utility;
               const playerWin = isRadiant(m) === m.radiant_win;
               const group = m.heroes || {};
               Object.keys(group).forEach((key) => {
@@ -1501,6 +1550,14 @@ Please keep request rate to approximately 3/s.
                   personaname: {
                     description: 'personaname',
                     type: 'string',
+                  },
+                  name: {
+                    description: 'name',
+                    type: 'string',
+                  },
+                  is_contributor: {
+                    description: 'is_contributor',
+                    type: 'boolean',
                   },
                   last_login: {
                     description: 'last_login',
@@ -1850,7 +1907,7 @@ Please keep request rate to approximately 3/s.
         },
         route: () => '/players/:account_id/histograms/:field',
         func: (req, res, cb) => {
-          const field = req.params.field;
+          const { field } = req.params;
           req.queryObj.project = req.queryObj.project.concat('radiant_win', 'player_slot').concat([field].filter(f => subkeys[f]));
           queries.getPlayerMatches(req.params.account_id, req.queryObj, (err, cache) => {
             if (err) {
@@ -2045,7 +2102,7 @@ Please keep request rate to approximately 3/s.
                 type: 'object',
                 properies: {
                   hero_id: {
-                    decription: 'The ID value of the hero played',
+                    description: 'The ID value of the hero played',
                     type: 'string',
                   },
                   rank: {
@@ -2285,12 +2342,12 @@ Please keep request rate to approximately 3/s.
         func: (req, res) => {
           // TODO handle NQL (@nicholashh query language)
           const input = req.query.sql;
-          return queryRaw(input, (err, result) => {
+          return explorerQuery(input, (err, result) => {
             if (err) {
               console.error(err);
             }
             const final = Object.assign({}, result, {
-              err: err ? err.stack : err,
+              err: err && err.toString(),
             });
             return res.status(err ? 400 : 200).json(final);
           });
@@ -2335,20 +2392,7 @@ Please keep request rate to approximately 3/s.
         },
         route: () => '/metadata',
         func: (req, res, cb) => {
-          async.parallel({
-            banner(cb) {
-              redis.get('banner', cb);
-            },
-            cheese(cb) {
-              redis.get('cheese_goal', (err, result) => cb(err, {
-                cheese: result,
-                goal: config.GOAL,
-              }));
-            },
-            user(cb) {
-              cb(null, req.user);
-            },
-          }, (err, result) => {
+          queries.getMetadata(req, (err, result) => {
             if (err) {
               return cb(err);
             }
@@ -2648,7 +2692,7 @@ Please keep request rate to approximately 3/s.
     '/search': {
       get: {
         summary: 'GET /search',
-        description: 'Search players by personaname. Default similarity is 0.51',
+        description: 'Search players by personaname.',
         tags: [
           'search',
         ],
@@ -2658,12 +2702,6 @@ Please keep request rate to approximately 3/s.
           description: 'Search string',
           required: true,
           type: 'string',
-        }, {
-          name: 'similarity',
-          in: 'query',
-          description: 'Minimum similarity threshold, between 0 and 1',
-          required: false,
-          type: 'number',
         }],
         responses: {
           200: {
@@ -2685,6 +2723,10 @@ Please keep request rate to approximately 3/s.
                     description: 'personaname',
                     type: 'string',
                   },
+                  last_match_time: {
+                    description: 'last_match_time. May not be present or null.',
+                    type: 'string',
+                  },
                   similarity: {
                     description: 'similarity',
                     type: 'number',
@@ -2698,6 +2740,15 @@ Please keep request rate to approximately 3/s.
         func: (req, res, cb) => {
           if (!req.query.q) {
             return res.status(400).json([]);
+          }
+
+          if (req.query.es || utility.checkIfInExperiment(res.locals.ip, config.ES_SEARCH_PERCENT)) {
+            return searchES(req.query, (err, result) => {
+              if (err) {
+                return cb(err);
+              }
+              return res.json(result);
+            });
           }
           return search(req.query, (err, result) => {
             if (err) {
@@ -2729,7 +2780,7 @@ Please keep request rate to approximately 3/s.
               type: 'object',
               properties: {
                 hero_id: {
-                  decription: 'The ID value of the hero played',
+                  description: 'The ID value of the hero played',
                   type: 'integer',
                 },
                 rankings: {
@@ -2830,7 +2881,7 @@ Please keep request rate to approximately 3/s.
               type: 'object',
               properties: {
                 hero_id: {
-                  decription: 'The ID value of the hero played',
+                  description: 'The ID value of the hero played',
                   type: 'integer',
                 },
                 result: {
@@ -3329,6 +3380,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /heroes/{hero_id}/matches',
         description: 'Get recent matches with a hero',
         tags: ['heroes'],
+        parameters: [params.heroIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3375,12 +3427,29 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /heroes/{hero_id}/matchups',
         description: 'Get results against other heroes for a hero',
         tags: ['heroes'],
+        parameters: [params.heroIdPathParam],
         responses: {
           200: {
             description: 'Success',
             schema: {
               type: 'array',
-              items: heroObject,
+              items: {
+                type: 'object',
+                properties: {
+                  hero_id: {
+                    description: 'Numeric identifier for the hero object',
+                    type: 'integer',
+                  },
+                  games_played: {
+                    description: 'Number of games played',
+                    type: 'integer',
+                  },
+                  wins: {
+                    description: 'Number of games won',
+                    type: 'integer',
+                  },
+                },
+              },
             },
           },
         },
@@ -3412,6 +3481,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /heroes/{hero_id}/durations',
         description: 'Get hero performance over a range of match durations',
         tags: ['heroes'],
+        parameters: [params.heroIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3462,6 +3532,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /heroes/{hero_id}/players',
         description: 'Get players who have played this hero',
         tags: ['heroes'],
+        parameters: [params.heroIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3562,7 +3633,8 @@ Please keep request rate to approximately 3/s.
           db.raw(`SELECT team_rating.*, teams.*
             FROM teams
             LEFT JOIN team_rating using(team_id)
-            ORDER BY rating desc NULLS LAST`)
+            ORDER BY rating desc NULLS LAST
+            LIMIT 1000`)
             .asCallback((err, result) => {
               if (err) {
                 return cb(err);
@@ -3577,6 +3649,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /teams/{team_id}',
         description: 'Get data for a team',
         tags: ['teams'],
+        parameters: [params.teamIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3603,6 +3676,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /teams/{team_id}/matches',
         description: 'Get matches for a team',
         tags: ['teams'],
+        parameters: [params.teamIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3612,7 +3686,7 @@ Please keep request rate to approximately 3/s.
         route: () => '/teams/:team_id/matches',
         func: (req, res, cb) => {
           db.raw(`
-            SELECT team_match.match_id, radiant_win, team_match.radiant, duration, start_time, leagueid, leagues.name as league_name, cluster, tm2.team_id opposing_team_id, teams2.name opposing_team_name, teams2.logo_url opposing_team_logo 
+            SELECT team_match.match_id, radiant_win, team_match.radiant, duration, start_time, leagueid, leagues.name as league_name, cluster, tm2.team_id opposing_team_id, teams2.name opposing_team_name, teams2.logo_url opposing_team_logo
             FROM team_match
             JOIN matches USING(match_id)
             JOIN leagues USING(leagueid)
@@ -3635,6 +3709,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /teams/{team_id}/players',
         description: 'Get players who have played for a team',
         tags: ['teams'],
+        parameters: [params.teamIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3690,6 +3765,7 @@ Please keep request rate to approximately 3/s.
         summary: 'GET /teams/{team_id}/heroes',
         description: 'Get heroes for a team',
         tags: ['teams'],
+        parameters: [params.teamIdPathParam],
         responses: {
           200: {
             description: 'Success',
@@ -3789,7 +3865,7 @@ Please keep request rate to approximately 3/s.
               allowBackup: true,
             }, (err, result) => {
               if (err) {
-                console.error(err);
+                // Don't log this to avoid filling the output
               }
               return cb(null, result);
             }),
@@ -3797,7 +3873,8 @@ Please keep request rate to approximately 3/s.
               if (err) {
                 return cb(err);
               }
-              return res.json(result.filter(Boolean));
+              const final = result.filter(Boolean);
+              return res.json(final);
             },
           );
         },
@@ -3850,14 +3927,12 @@ Please keep request rate to approximately 3/s.
             if (err) {
               return cb(err);
             }
-            const entries = rows.map((r, i) =>
-              ({
-                match_id: r.split(':')[0],
-                start_time: r.split(':')[1],
-                hero_id: r.split(':')[2],
-                score: rows[i + 1],
-              })).filter((r, i) =>
-              i % 2 === 0);
+            const entries = rows.map((r, i) => ({
+              match_id: r.split(':')[0],
+              start_time: r.split(':')[1],
+              hero_id: r.split(':')[2],
+              score: rows[i + 1],
+            })).filter((r, i) => i % 2 === 0);
             return res.json(entries);
           });
         },
@@ -4026,7 +4101,7 @@ Please keep request rate to approximately 3/s.
         parameters: [{
           name: 'scenario',
           in: 'query',
-          description: Object.keys(su.teamScenariosQueryParams).toString(),
+          description: su.teamScenariosQueryParams.toString(),
           required: false,
           type: 'string',
         }],
@@ -4047,7 +4122,7 @@ Please keep request rate to approximately 3/s.
                     type: 'boolean',
                   },
                   region: {
-                    decription: 'Region the game was played in',
+                    description: 'Region the game was played in',
                     type: 'integer',
                   },
                   games: {
@@ -4121,6 +4196,91 @@ Please keep request rate to approximately 3/s.
         },
       },
     },
+    '/feed': {
+      get: {
+        summary: 'GET /feed',
+        description: 'Get streaming feed of latest matches as newline-delimited JSON',
+        tags: ['feed'],
+        parameters: [
+          {
+            name: 'seq_num',
+            in: 'query',
+            description: 'Return only matches after this sequence number. If not provided, returns a stream starting at the current time.',
+            required: false,
+            type: 'number',
+          },
+          {
+            name: 'game_mode',
+            in: 'query',
+            description: 'Filter to only matches in this game mode',
+            required: false,
+            type: 'number',
+          },
+          {
+            name: 'leagueid',
+            in: 'query',
+            description: 'Filter to only matches in this league',
+            required: false,
+            type: 'number',
+          },
+          {
+            name: 'included_account_id',
+            in: 'query',
+            description: 'Filter to only matches with this account_id participating',
+            required: false,
+            type: 'number',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Success',
+            schema: {
+              type: 'array',
+              items: matchObject,
+            },
+          },
+        },
+        route: () => '/feed',
+        func: (req, res, cb) => {
+          if (!res.locals.isAPIRequest) {
+            return res.status(403).json({ error: 'API key required' });
+          }
+          if (!req.query) {
+            return res.status(400).json({ error: 'No query string detected' });
+          }
+          if (!req.query.game_mode && !req.query.leagueid && !req.query.included_account_id) {
+            return res.status(400).json({ error: 'A filter parameter is required' });
+          }
+          const keepAlive = setInterval(() => res.write('\n'), 5000);
+          req.on('end', () => {
+            clearTimeout(keepAlive);
+          });
+          const readFromStream = (seqNum) => {
+            redis.xread('block', '0', 'STREAMS', 'feed', seqNum, (err, result) => {
+              if (err) {
+                return cb(err);
+              }
+              let nextSeqNum = '$';
+              // console.log(result[0][1].length);
+              result[0][1].forEach((dataArray) => {
+                const dataMatch = JSON.parse(dataArray[1]['1']);
+                if (filter([dataMatch], req.query).length) {
+                  const dataSeqNum = dataArray[0];
+                  nextSeqNum = dataSeqNum;
+                  // This is an array of 2 elements where the first is the sequence number and the second is the stream key-value pairs
+                  // Put the sequence number in the match object so client can know where they're at
+                  const final = { ...dataMatch, seq_num: dataSeqNum };
+                  res.write(`${JSON.stringify(final)}\n`);
+                  redisCount(redis, 'feed');
+                }
+              });
+              return readFromStream(nextSeqNum);
+            });
+          };
+          return readFromStream(req.query.seq_num || '$');
+        },
+      },
+    },
     '/admin/apiMetrics': {
       get: {
         summary: 'GET /admin/apiMetrics',
@@ -4135,62 +4295,57 @@ Please keep request rate to approximately 3/s.
           },
         },
         route: () => '/admin/apiMetrics',
-        func: (req, res, cb) => {
+        func: (req, res) => {
           const startTime = moment().startOf('month').format('YYYY-MM-DD');
           const endTime = moment().endOf('month').format('YYYY-MM-DD');
 
           async.parallel({
-            timeAPIUsage: (cb) => {
-              db.raw(`
-                SELECT
-                  date_part('day', timestamp) as day,
-                  T1.api_key as api_key,
-                  MAX(api_key_usage.usage_count) as usage_count
-                FROM api_key_usage
-                JOIN ( 
-                  SELECT
-                    api_key,
-                    usage_count
-                  FROM api_key_usage
-                  WHERE
-                    timestamp = (SELECT MAX(timestamp) FROM api_key_usage)
-                  ORDER BY usage_count DESC
-                  LIMIT 50
-                ) as T1
-                on api_key_usage.api_key = T1.api_key
-                GROUP BY day, T1.api_key
-              `)
-                .asCallback((err, res) => cb(err, err ? null : res.rows));
-            },
             topAPI: (cb) => {
               db.raw(`
                 SELECT
                   account_id,
-                  ARRAY_AGG(api_key),
-                  ARRAY_AGG(DISTINCT ip),
-                  SUM(usage_count) as usage_count
-                FROM api_key_usage
-                WHERE
-                  timestamp = (SELECT MAX(timestamp) FROM api_key_usage)
+                  ARRAY_AGG(DISTINCT api_key) as api_keys,
+                  SUM(usage) as usage_count
+                FROM (
+                  SELECT
+                    account_id,
+                    api_key,
+                    ip,
+                    MAX(usage_count) as usage
+                  FROM api_key_usage
+                  WHERE
+                    timestamp >= ?
+                    AND timestamp <= ?
+                  GROUP BY account_id, api_key, ip
+                ) as t1
                 GROUP BY account_id
                 ORDER BY usage_count DESC
                 LIMIT 10
-              `)
+              `, [startTime, endTime])
                 .asCallback((err, res) => cb(err, err ? null : res.rows));
             },
             topAPIIP: (cb) => {
               db.raw(`
                 SELECT
                   ip,
-                  ARRAY_AGG(account_id),
-                  ARRAY_AGG(api_key),
-                  SUM(usage_count) as usage_count
-                FROM api_key_usage
-                WHERE
-                  timestamp = (SELECT MAX(timestamp) FROM api_key_usage)
+                  ARRAY_AGG(DISTINCT account_id) as account_ids,
+                  ARRAY_AGG(DISTINCT api_key) as api_keys,
+                  SUM(usage) as usage_count
+                FROM (
+                  SELECT
+                    account_id,
+                    api_key,
+                    ip,
+                    MAX(usage_count) as usage
+                  FROM api_key_usage
+                  WHERE
+                    timestamp >= ?
+                    AND timestamp <= ?
+                  GROUP BY account_id, api_key, ip
+                ) as t1
                 GROUP BY ip
                 ORDER BY usage_count DESC
-                LIMIT 100
+                LIMIT 10
               `, [startTime, endTime])
                 .asCallback((err, res) => cb(err, err ? null : res.rows));
             },
@@ -4205,53 +4360,15 @@ Please keep request rate to approximately 3/s.
               `, [startTime, endTime])
                 .asCallback((err, res) => cb(err, err ? null : res.rows));
             },
-            topUsers: (cb) => {
-              db.raw(`
-                SELECT
-                  account_id,
-                  SUM(usage_count) as usage_count,
-                  ARRAY_AGG(ip) as ips
-                FROM user_usage
-                WHERE
-                  timestamp >= ?
-                  AND timestamp <= ?
-                  AND account_id != 0
-                GROUP BY account_id
-                ORDER BY usage_count DESC
-                LIMIT 100
-              `, [startTime, endTime])
-                .asCallback((err, res) => cb(err, err ? null : res.rows));
-            },
             topUsersIP: (cb) => {
-              db.raw(`
-                SELECT
-                  ip,
-                  SUM(usage_count) as usage_count,
-                  ARRAY_AGG(account_id) as account_ids
-                FROM user_usage
-                WHERE
-                  timestamp >= ?
-                  AND timestamp <= ?
-                GROUP BY ip
-                ORDER BY usage_count DESC
-                LIMIT 10
-              `, [startTime, endTime])
-                .asCallback((err, res) => cb(err, err ? null : res.rows));
+              redis.zrevrange('user_usage_count', 0, 24, 'WITHSCORES', cb);
             },
-            numUsers: (cb) => {
-              db.raw(`
-                SELECT
-                  COUNT(DISTINCT account_id)
-                FROM user_usage
-                WHERE
-                  timestamp >= ?
-                  AND timestamp <= ?
-              `, [startTime, endTime])
-                .asCallback((err, res) => cb(err, err ? null : res.rows));
+            numUsersIP: (cb) => {
+              redis.zcard('user_usage_count', cb);
             },
           }, (err, result) => {
             if (err) {
-              return cb(err);
+              return res.status(500).send(err.message);
             }
             return res.json(result);
           });

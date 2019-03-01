@@ -35,6 +35,7 @@ const defaults = {
   REDIS_TEST_URL: 'redis://127.0.0.1:6379/1',
   CASSANDRA_URL: 'cassandra://localhost/yasp', // connection string for Cassandra
   CASSANDRA_TEST_URL: 'cassandra://localhost/yasp_test',
+  ELASTICSEARCH_URL: 'localhost:9200',
   INIT_POSTGRES_HOST: 'localhost',
   INIT_CASSANDRA_HOST: 'localhost',
   RETRIEVER_SECRET: '', // string to use as shared secret with retriever/parser
@@ -45,28 +46,35 @@ const defaults = {
   MMSTATS_DATA_INTERVAL: 3, // minutes between requests for MMStats data
   DEFAULT_DELAY: 1000, // delay between API requests
   SCANNER_DELAY: 2000, // delay for scanner API requests (stricter rate limit)
-  MMR_PARALLELISM: 10, // Number of simulataneous MMR requests to make (per retriever)
+  MMR_PARALLELISM: 10, // Number of simultaneous MMR requests to make (per retriever)
   PARSER_PARALLELISM: 1, // Number of simultaneous parse jobs to run (per parser)
-  BENCHMARK_RETENTION_MINUTES: 5, // minutes in block to retain benchmark data for percentile
+  BENCHMARK_RETENTION_MINUTES: 60, // minutes in block to retain benchmark data for percentile
   GCDATA_PERCENT: 0, // percent of inserted matches to randomly queue for GC data
   SCANNER_PERCENT: 100, // percent of matches to insert from scanner
   PUBLIC_SAMPLE_PERCENT: 10, // percent of public matches to sample in DB
-  SCENARIOS_SAMPLE_PERCENT: 50, // percent of parsed matches to sample for scenarios
+  SCENARIOS_SAMPLE_PERCENT: 100, // percent of parsed matches to sample for scenarios
+  BENCHMARKS_SAMPLE_PERCENT: 100, // percent of parsed matches to sample for benchmarks
   ENABLE_MATCH_CACHE: '', // set to enable caching matches in Redis
   ENABLE_PLAYER_CACHE: 1, // enable/disable player aggregation caching
   ENABLE_RANDOM_MMR_UPDATE: '', // set to request MMR updates after ranked matches
-  WEBSOCKET_PORT: 80, // port for live match subscription websocket service
-  MAXIMUM_AGE_SCENARIOS_ROWS: 2, // maximum allowed age of scenarios rows in weeks
+  MAXIMUM_AGE_SCENARIOS_ROWS: 4, // maximum allowed age of scenarios rows in weeks
   MATCH_CACHE_SECONDS: 60, // number of seconds to cache matches
-  PLAYER_CACHE_SECONDS: 3600, // number of seconds to cache player aggregations
-  SCANNER_PLAYER_PERCENT: 10, // percent of matches from scanner to insert player account IDs for (discover new player account IDs)
+  PLAYER_CACHE_SECONDS: 1800, // number of seconds to cache player aggregations
+  SCANNER_PLAYER_PERCENT: 100, // percent of matches from scanner to insert player account IDs for (discover new player account IDs)
   ENABLE_RETRIEVER_ADVANCED_AUTH: '', // set to enable retriever two-factor and SteamGuard authentication,
   ENABLE_API_LIMIT: '', // if truthy, API calls after exceeding API_FREE_LIMIT are blocked
-  API_FREE_LIMIT: 25000, // number of api requests per month before 429 is returned. If using an API key, calls over this are charged.
-  API_KEY_PER_MIN_LIMIT: 180, // Rate limit per minute if using an API key
+  API_FREE_LIMIT: 50000, // number of api requests per month before 429 is returned. If using an API key, calls over this are charged.
+  API_BILLING_UNIT: 100, // how many calls is equivalent to a unit of calls e.g. 100 calls per $0.01.
+  API_KEY_PER_MIN_LIMIT: 300, // Rate limit per minute if using an API key
   NO_API_KEY_PER_MIN_LIMIT: 60, // Rate limit per minute if not using an API key
   ADMIN_ACCOUNT_IDS: '', // Whitelisted, comma separated account IDs to access /admin* routes
-  BACKUP_RETRIEVER_FACTOR: 0, // percent of replay salts to fetch from backup data source
+  BACKUP_RETRIEVER_PERCENT: 0, // percent of replay salts to fetch from backup data source
+  GCDATA_PARALLELISM: 1, // Number of simultaneous GC match details requests to make (per retriever)
+  STRIPE_SECRET: 'rk_test_gRqwhv4xqv0a1olp8kk8fZ94', // for stripe payment processing (kept on server)
+  STRIPE_API_PLAN: 'plan_CgLthOgwrDgz2K', // plan id for stripe metering
+  ES_SEARCH_PERCENT: 0, // % of users to roll out elasticsearch to
+  WEBHOOK_TIMEOUT: 1000, // Timeout in milliseconds when calling a webhook
+  WEBHOOK_FEED_INTERVAL: 2000, // Delay in milliseconds between reads from the match feed for the webhook handler.
 };
 // ensure that process.env has all values in defaults, but prefer the process.env value
 Object.keys(defaults).forEach((key) => {

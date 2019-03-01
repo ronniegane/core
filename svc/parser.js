@@ -5,22 +5,29 @@
  * Stream is run through a series of processors to count/aggregate it into a single object
  * This object is passed to insertMatch to persist the data into the database.
  * */
+const cp = require('child_process');
+const async = require('async');
+const numCPUs = require('os').cpus().length;
+const express = require('express');
 const utility = require('../util/utility');
 const getGcData = require('../util/getGcData');
 const config = require('../config');
 const queue = require('../store/queue');
 const queries = require('../store/queries');
-const cp = require('child_process');
-const async = require('async');
-const numCPUs = require('os').cpus().length;
 
-const insertMatch = queries.insertMatch;
-const buildReplayUrl = utility.buildReplayUrl;
+const { insertMatch } = queries;
+const { buildReplayUrl } = utility;
+
+const app = express();
+app.get('/healthz', (req, res) => {
+  res.end('ok');
+});
+app.listen(config.PORT || config.PARSER_PORT);
 
 function runParse(match, job, cb) {
-  let url = match.url;
+  let { url } = match;
   if (config.NODE_ENV === 'test') {
-    url = `https://cdn.rawgit.com/odota/testfiles/master/${match.match_id}_1.dem`;
+    url = `https://odota.github.io/testfiles/${match.match_id}_1.dem`;
   }
   console.log(new Date(), url);
   cp.exec(
@@ -36,6 +43,8 @@ function runParse(match, job, cb) {
         skipParse: true,
         doLogParse: match.doLogParse,
         doScenarios: match.origin === 'scanner' && match.match_id % 100 < config.SCENARIOS_SAMPLE_PERCENT,
+        doParsedBenchmarks: match.origin === 'scanner' && match.match_id % 100 < config.BENCHMARKS_SAMPLE_PERCENT,
+        doTellFeed: match.origin === 'scanner',
       }, cb);
     },
   );

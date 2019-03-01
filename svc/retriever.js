@@ -2,13 +2,13 @@
  * Worker interfacing with the Steam GC.
  * Provides HTTP endpoints for other workers.
  * */
-const config = require('../config');
 const Steam = require('steam');
 const Dota2 = require('dota2');
 const async = require('async');
 const express = require('express');
 const compression = require('compression');
 const cp = require('child_process');
+const config = require('../config');
 
 const advancedAuth = config.ENABLE_RETRIEVER_ADVANCED_AUTH ? {
   /* eslint-disable global-require */
@@ -24,13 +24,13 @@ const steamObj = {};
 const launch = new Date();
 const minUpTimeSeconds = 660;
 const maxUpTimeSeconds = 3600;
-const timeoutMs = 10000;
+const timeoutMs = 5000;
 const timeoutThreshold = 50;
-const accountsToUse = 5;
+const accountsToUse = 6;
 const port = config.PORT || config.RETRIEVER_PORT;
-const matchRequestDelay = 800;
-const matchRequestDelayStep = 200;
-const matchRequestLimit = 250;
+const matchRequestDelay = 500;
+const matchRequestDelayStep = 300;
+const matchRequestLimit = 500;
 
 let matchRequestDelayIncr = 0;
 let lastRequestTime;
@@ -42,6 +42,9 @@ let timeouts = 0;
 let allReady = false;
 let users = config.STEAM_USER.split(',');
 let passes = config.STEAM_PASS.split(',');
+
+// For the latest list: https://api.steampowered.com/ISteamDirectory/GetCMList/v1/?format=json&cellid=0
+Steam.servers = [{ host: '155.133.242.9', port: 27018 }, { host: '185.25.180.15', port: 27019 }, { host: '185.25.180.15', port: 27018 }, { host: '185.25.180.14', port: 27017 }, { host: '185.25.180.15', port: 27017 }, { host: '155.133.242.9', port: 27019 }, { host: '155.133.242.9', port: 27017 }, { host: '185.25.180.14', port: 27018 }, { host: '185.25.180.14', port: 27019 }, { host: '155.133.242.8', port: 27017 }, { host: '155.133.242.8', port: 27018 }, { host: '155.133.242.8', port: 27019 }, { host: '162.254.197.40', port: 27018 }, { host: '155.133.248.50', port: 27017 }, { host: '155.133.248.51', port: 27017 }, { host: '162.254.196.68', port: 27017 }, { host: '162.254.197.41', port: 27017 }, { host: '162.254.196.67', port: 27019 }, { host: '155.133.248.53', port: 27018 }, { host: '155.133.248.52', port: 27018 }, { host: '162.254.196.67', port: 27017 }, { host: '162.254.196.67', port: 27018 }, { host: '162.254.196.83', port: 27017 }, { host: '162.254.196.84', port: 27017 }, { host: '155.133.248.52', port: 27017 }, { host: '162.254.196.68', port: 27018 }, { host: '162.254.197.40', port: 27019 }, { host: '155.133.248.51', port: 27019 }, { host: '155.133.248.52', port: 27019 }, { host: '155.133.248.53', port: 27019 }, { host: '155.133.248.50', port: 27019 }, { host: '155.133.248.53', port: 27017 }, { host: '162.254.196.68', port: 27019 }, { host: '162.254.197.42', port: 27019 }, { host: '162.254.196.84', port: 27018 }, { host: '155.133.248.50', port: 27018 }, { host: '162.254.196.83', port: 27019 }, { host: '162.254.197.42', port: 27018 }, { host: '162.254.197.41', port: 27018 }, { host: '162.254.196.84', port: 27019 }, { host: '162.254.196.83', port: 27018 }, { host: '162.254.197.40', port: 27017 }, { host: '162.254.197.41', port: 27019 }, { host: '155.133.248.51', port: 27018 }, { host: '162.254.197.42', port: 27017 }, { host: '146.66.152.11', port: 27018 }, { host: '146.66.152.11', port: 27019 }, { host: '146.66.152.11', port: 27017 }, { host: '146.66.152.10', port: 27019 }, { host: '146.66.152.10', port: 27017 }, { host: '146.66.152.10', port: 27018 }, { host: '208.78.164.10', port: 27018 }, { host: '208.78.164.9', port: 27019 }, { host: '208.78.164.13', port: 27018 }, { host: '208.78.164.9', port: 27017 }, { host: '208.78.164.12', port: 27018 }, { host: '208.78.164.10', port: 27017 }, { host: '155.133.229.251', port: 27019 }, { host: '155.133.229.251', port: 27017 }, { host: '208.78.164.14', port: 27018 }, { host: '208.78.164.12', port: 27019 }, { host: '208.78.164.13', port: 27017 }, { host: '208.78.164.9', port: 27018 }, { host: '208.78.164.14', port: 27019 }, { host: '208.78.164.11', port: 27018 }, { host: '208.78.164.10', port: 27019 }, { host: '155.133.229.250', port: 27017 }, { host: '208.78.164.12', port: 27017 }, { host: '208.78.164.11', port: 27019 }, { host: '155.133.229.250', port: 27018 }, { host: '155.133.229.251', port: 27018 }, { host: '208.78.164.11', port: 27017 }, { host: '155.133.229.250', port: 27019 }, { host: '208.78.164.13', port: 27019 }, { host: '208.78.164.14', port: 27017 }, { host: '162.254.193.7', port: 27017 }, { host: '162.254.193.47', port: 27019 }, { host: '162.254.193.7', port: 27018 }, { host: '162.254.193.46', port: 27018 }, { host: '162.254.193.6', port: 27017 }];
 
 function selfDestruct() {
   process.exit(0);
@@ -84,7 +87,7 @@ function getMMStats(idx, cb) {
 
 function getPlayerProfile(idx, accountId, cb) {
   accountId = Number(accountId);
-  const Dota2 = steamObj[idx].Dota2;
+  const { Dota2 } = steamObj[idx];
   console.log('requesting player profile %s', accountId);
   profileRequests += 1;
   Dota2.requestProfileCard(accountId, (err, profileData) => {
@@ -116,7 +119,7 @@ function getPlayerProfile(idx, accountId, cb) {
 }
 
 function getGcMatchData(idx, matchId, cb) {
-  const Dota2 = steamObj[idx].Dota2;
+  const { Dota2 } = steamObj[idx];
   matchRequests += 1;
   const timeout = setTimeout(() => {
     timeouts += 1;
@@ -236,8 +239,8 @@ function init() {
     client.on('error', (err) => {
       console.error(err);
       if (advancedAuth && (
-        user in advancedAuth.pendingTwoFactorAuth ||
-        user in advancedAuth.pendingSteamGuardAuth)) {
+        user in advancedAuth.pendingTwoFactorAuth
+        || user in advancedAuth.pendingSteamGuardAuth)) {
         console.log('not reconnecting %s, waiting for auth...', user);
         client.pendingLogOn = true;
       } else {
@@ -396,7 +399,7 @@ app.get('/', (req, res, cb) => {
       res.locals.data = data;
       return cb(err);
     });
-  } else if (req.query.match_id) {
+  } if (req.query.match_id) {
     // Don't allow requests coming in too fast
     const curRequestTime = new Date();
     if (lastRequestTime
@@ -410,7 +413,7 @@ app.get('/', (req, res, cb) => {
       res.locals.data = data;
       return cb(err);
     });
-  } else if (req.query.account_id) {
+  } if (req.query.account_id) {
     return getPlayerProfile(rKey, req.query.account_id, (err, data) => {
       res.locals.data = data;
       return cb(err);
@@ -422,10 +425,9 @@ app.get('/', (req, res, cb) => {
 app.use((req, res) => {
   res.json(res.locals.data);
 });
-app.use((err, req, res) =>
-  res.status(500).json({
-    error: err,
-  }));
+app.use((err, req, res) => res.status(500).json({
+  error: err,
+}));
 const server = app.listen(port, () => {
   const host = server.address().address;
   console.log('[RETRIEVER] listening at http://%s:%s', host, port);

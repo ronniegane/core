@@ -1,14 +1,13 @@
 /**
  * Load match IDs from database, then issue re-insert and re-parse on all of them
  * */
+const async = require('async');
 const utility = require('../util/utility');
 const queries = require('../store/queries');
 const db = require('../store/db');
-const async = require('async');
 
-const generateJob = utility.generateJob;
-const getData = utility.getData;
-const insertMatch = queries.insertMatch;
+const { generateJob, getData } = utility;
+const { insertMatch } = queries;
 const delay = 50;
 const args = process.argv.slice(2);
 const matchId = Number(args[0]) || 0;
@@ -28,7 +27,7 @@ db.select('match_id')
       const job = generateJob('api_details', {
         match_id: row.match_id,
       });
-      const url = job.url;
+      const { url } = job;
       getData({
         url,
         delay,

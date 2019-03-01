@@ -3,16 +3,15 @@
  * */
 const async = require('async');
 const urllib = require('url');
-const config = require('../config');
 const constants = require('dotaconstants');
-const utility = require('../util/utility');
+const config = require('../config');
+const { redisCount, getData, generateJob } = require('../util/utility');
 const db = require('../store/db');
+const redis = require('../store/redis');
 const queue = require('../store/queue');
 const queries = require('../store/queries');
 
-const getData = utility.getData;
-const insertMatch = queries.insertMatch;
-const generateJob = utility.generateJob;
+const { insertMatch } = queries;
 const apiKeys = config.STEAM_API_KEY.split(',');
 // number of api requests to send at once
 const parallelism = Math.min(20, apiKeys.length);
@@ -30,6 +29,7 @@ function processFullHistory(job, cb) {
         return cb(err);
       }
       console.log('got full match history for %s', player.account_id);
+      redisCount(redis, 'fullhistory');
       return cb(err);
     });
   }
@@ -69,11 +69,14 @@ function processFullHistory(job, cb) {
   }
 
   const player = job;
+  if (Number(player.account_id) === 0) {
+    return cb();
+  }
   // if test or only want 500 of any hero, use the short array
   const heroArray = job.short_history || config.NODE_ENV === 'test' ? ['0'] : Object.keys(constants.heroes);
   // use steamapi via specific player history and specific hero id (up to 500 games per hero)
   player.match_ids = {};
-  async.eachLimit(heroArray, parallelism, (heroId, cb) => {
+  return async.eachLimit(heroArray, parallelism, (heroId, cb) => {
     // make a request for every possible hero
     const container = generateJob('api_history', {
       account_id: player.account_id,

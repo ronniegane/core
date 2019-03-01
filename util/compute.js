@@ -1,10 +1,8 @@
 const constants = require('dotaconstants');
 const utility = require('./utility');
 
-const max = utility.max;
-const min = utility.min;
-const isRadiant = utility.isRadiant;
-const ancients = constants.ancients;
+const { max, min, isRadiant } = utility;
+const { ancients } = constants;
 
 /**
  * Count the words that occur in a set of messages
@@ -85,8 +83,7 @@ function computeMatchData(pm) {
   }
   if (pm.kills_log && selfHero) {
     // remove self kills
-    pm.kills_log = pm.kills_log.filter(k =>
-      k.key !== selfHero.name);
+    pm.kills_log = pm.kills_log.filter(k => k.key !== selfHero.name);
   }
   if (pm.killed) {
     pm.neutral_kills = 0;
@@ -163,15 +160,14 @@ function computeMatchData(pm) {
   // compute hashes of purchase time sums and counts from logs
   if (pm.purchase_log) {
     // remove ward dispenser and recipes
-    pm.purchase_log = pm.purchase_log.filter(purchase =>
-      !(purchase.key.indexOf('recipe_') === 0 || purchase.key === 'ward_dispenser'));
+    pm.purchase_log = pm.purchase_log.filter(purchase => !(purchase.key.indexOf('recipe_') === 0 || purchase.key === 'ward_dispenser'));
     pm.purchase_time = {};
     pm.first_purchase_time = {};
     pm.item_win = {};
     pm.item_usage = {};
     for (let i = 0; i < pm.purchase_log.length; i += 1) {
       const k = pm.purchase_log[i].key;
-      const time = pm.purchase_log[i].time;
+      const { time } = pm.purchase_log[i];
       if (!pm.purchase_time[k]) {
         pm.purchase_time[k] = 0;
       }
@@ -213,7 +209,7 @@ function computeMatchData(pm) {
     pm.stomp = pm.radiant_win === isRadiant(pm) ? stompVal : undefined;
   }
   if (pm.pings) {
-    pm.pings = pm.pings[0];
+    pm.pings = pm.pings['0'];
   }
   if (pm.life_state) {
     pm.life_state_dead = (pm.life_state[1] || 0) + (pm.life_state[2] || 0);

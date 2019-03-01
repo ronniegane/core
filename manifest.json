@@ -1,7 +1,7 @@
 {
   "apps": [
     {
-      "script": "apiadmin.js",
+      "script": "svc/apiadmin.js",
       "watch": true,
       "ignore_watch": [".git", "node_modules"],
       "group": "backend",
@@ -46,7 +46,7 @@
       "ignore_watch": [".git", "node_modules"],
       "group": "backend",
       "exec_mode": "cluster",
-      "instances": 1
+      "instances": 6
     },
     {
       "script": "svc/monitor.js",
@@ -185,10 +185,10 @@
       "instances": 1
     },
     {
-      "script": "svc/socket.js",
+      "script": "svc/webhooks.js",
       "watch": true,
       "ignore_watch": [".git", "node_modules"],
-      "group": "socket",
+      "group": "backend",
       "exec_mode": "cluster",
       "instances": 1
     },
@@ -210,6 +210,14 @@
     },
     {
       "script": "svc/counts.js",
+      "watch": true,
+      "ignore_watch": [".git", "node_modules"],
+      "group": "backend",
+      "exec_mode": "cluster",
+      "instances": 1
+    },
+    {
+      "script": "svc/benchmarks.js",
       "watch": true,
       "ignore_watch": [".git", "node_modules"],
       "group": "backend",

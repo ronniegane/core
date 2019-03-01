@@ -2,14 +2,16 @@
  * Provides utility functions.
  * All functions should have external dependencies (DB, etc.) passed as parameters
  * */
-const config = require('../config');
 const constants = require('dotaconstants');
 const request = require('request');
 const Long = require('long');
 const urllib = require('url');
 const uuidV4 = require('uuid/v4');
 const moment = require('moment');
+const crypto = require('crypto');
 const laneMappings = require('./laneMappings');
+const config = require('../config');
+const contributors = require('../CONTRIBUTORS');
 
 /**
  * Tokenizes an input string.
@@ -65,8 +67,7 @@ function generateJob(type, payload) {
     },
     api_summaries() {
       return {
-        url: `${apiUrl}/ISteamUser/GetPlayerSummaries/v0002/?key=${apiKey}&steamids=${payload.players.map(p =>
-          convert32to64(String(p.account_id))).join()}`,
+        url: `${apiUrl}/ISteamUser/GetPlayerSummaries/v0002/?key=${apiKey}&steamids=${payload.players.map(p => convert32to64(String(p.account_id))).join()}`,
         title: [type, payload.summaries_id].join(),
         type: 'api',
         payload,
@@ -95,7 +96,7 @@ function generateJob(type, payload) {
     },
     api_leagues() {
       return {
-        url: `${apiUrl}/IDOTA2Match_570/GetLeagueListing/v0001/?key=${apiKey}&language=${payload.language}`,
+        url: 'http://www.dota2.com/webapi/IDOTA2League/GetLeagueInfoList/v001',
         title: [type].join(),
         type: 'api',
         payload,
@@ -119,7 +120,7 @@ function generateJob(type, payload) {
     },
     api_notable() {
       return {
-        url: `${apiUrl}/IDOTA2Fantasy_570/GetProPlayerList/v1/?key=${apiKey}`,
+        url: 'http://www.dota2.com/webapi/IDOTA2Fantasy/GetProPlayerInfo/v001',
         title: [type].join(),
         type: 'api',
         payload,
@@ -255,7 +256,7 @@ function getData(url, cb) {
         return setTimeout(() => {
           getData(url, cb);
         }, backoff);
-      } else if (body.result) {
+      } if (body.result) {
         // steam api usually returns data with body.result, getplayersummaries has body.response
         if (body.result.status === 15
           || body.result.error === 'Practice matches are not available via GetMatchDetails'
@@ -264,7 +265,7 @@ function getData(url, cb) {
           // private match history or attempting to get practice match/invalid id, don't retry
           // non-retryable
           return cb(body);
-        } else if (body.result.error || body.result.status === 2) {
+        } if (body.result.error || body.result.status === 2) {
           // valid response, but invalid data, retry
           if (url.noRetry) {
             return cb(err || 'invalid data');
@@ -284,6 +285,13 @@ function getData(url, cb) {
  * */
 function isRadiant(player) {
   return player.player_slot < 128;
+}
+
+/**
+ * Determines if a player has contributed to the development of OpenDota
+*/
+function isContributor(accountId) {
+  return accountId in contributors;
 }
 
 /**
@@ -436,9 +444,8 @@ function getEndOfMonth() {
  * */
 function average(data) {
   return Math.floor((data.reduce(
-    (a, b) =>
-      a + b
-    , 0,
+    (a, b) => a + b,
+    0,
   ) / data.length));
 }
 
@@ -461,8 +468,7 @@ function stdDev(data) {
  * Finds the median of the input array
  * */
 function median(data) {
-  data.sort((a, b) =>
-    a - b);
+  data.sort((a, b) => a - b);
   const half = Math.floor(data.length / 2);
   if (data.length % 2) {
     return data[half];
@@ -512,8 +518,7 @@ function expectedWin(rates) {
  * Converts a group of heroes to string
  * */
 function groupToString(g) {
-  return g.sort((a, b) =>
-    a - b).join(',');
+  return g.sort((a, b) => a - b).join(',');
 }
 
 /**
@@ -801,6 +806,14 @@ function epochWeek() {
   return Math.floor(new Date() / (1000 * 60 * 60 * 24 * 7));
 }
 
+function cleanItemSchema(input) {
+  return input;
+}
+
+function checkIfInExperiment(ip, mod) {
+  return crypto.createHash('md5').update(ip).digest().readInt32BE(0) % 100 < mod;
+}
+
 module.exports = {
   tokenize,
   generateJob,
@@ -808,6 +821,7 @@ module.exports = {
   convert32to64,
   convert64to32,
   isRadiant,
+  isContributor,
   playerWon,
   mergeObjects,
   modeWithCount,
@@ -839,4 +853,6 @@ module.exports = {
   getRedisCountHour,
   invokeInterval,
   epochWeek,
+  cleanItemSchema,
+  checkIfInExperiment,
 };

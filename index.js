@@ -5,7 +5,7 @@
 const cp = require('child_process');
 const pm2 = require('pm2');
 const async = require('async');
-const apps = require('./manifest.json').apps;
+const { apps } = require('./manifest.json');
 
 const args = process.argv.slice(2);
 const group = args[0] || process.env.GROUP;
@@ -23,7 +23,14 @@ if (process.env.ROLE) {
         console.log(app.script, app.instances);
         pm2.start(app.script, {
           instances: app.instances,
-        }, cb);
+          restartDelay: 10000,
+        }, (err) => {
+          if (err) {
+            // Log the error and continue
+            console.error(err);
+          }
+          cb();
+        });
       }
     }, (err) => {
       if (err) {
@@ -32,8 +39,8 @@ if (process.env.ROLE) {
       pm2.disconnect();
     });
   });
-  // Clean up the logs once a day
-  setInterval(() => pm2.flush(), 86400 * 1000);
+  // Clean up the logs once an hour
+  setInterval(() => pm2.flush(), 3600 * 1000);
 } else {
   // Block indefinitely (keep process alive for Docker)
   process.stdin.resume();

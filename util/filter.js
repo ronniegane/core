@@ -1,6 +1,6 @@
 const utility = require('./utility');
 
-const isRadiant = utility.isRadiant;
+const { isRadiant } = utility;
 
 function filter(matches, filters) {
   const curtime = Math.floor(Date.now() / 1000);
@@ -9,7 +9,7 @@ function filter(matches, filters) {
   const conditions = {
     // filter: player won
     win(m, key) {
-      return Number(utility.isRadiant(m) === m.radiant_win) === key;
+      return Number(isRadiant(m) === m.radiant_win) === key;
     },
     patch(m, key) {
       return m.patch === key;
@@ -33,7 +33,7 @@ function filter(matches, filters) {
       return m.hero_id === key;
     },
     is_radiant(m, key) {
-      return Number(utility.isRadiant(m)) === key;
+      return Number(isRadiant(m)) === key;
     },
     party_size(m, key) {
       return m.party_size === key;
@@ -55,6 +55,28 @@ function filter(matches, filters) {
         Object.keys(m.heroes || {}).forEach((key) => {
           if (m.heroes[key].account_id === k) {
             passed = false;
+          }
+        });
+        return passed;
+      });
+    },
+    with_account_id(m, key, arr) {
+      return arr.every((k) => {
+        let passed = false;
+        Object.keys(m.heroes || {}).forEach((key) => {
+          if (m.heroes[key].account_id === k && isRadiant(m.heroes[key]) === isRadiant(m)) {
+            passed = true;
+          }
+        });
+        return passed;
+      });
+    },
+    against_account_id(m, key, arr) {
+      return arr.every((k) => {
+        let passed = false;
+        Object.keys(m.heroes || {}).forEach((key) => {
+          if (m.heroes[key].account_id === k && isRadiant(m.heroes[key]) !== isRadiant(m)) {
+            passed = true;
           }
         });
         return passed;
@@ -84,6 +106,9 @@ function filter(matches, filters) {
     },
     significant(m, key) {
       return Number(utility.isSignificant(m)) === key;
+    },
+    leagueid(m, key) {
+      return m.leagueid === key;
     },
   };
   const filtered = [];

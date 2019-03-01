@@ -29,6 +29,8 @@ CREATE TABLE IF NOT EXISTS matches (
   version int,
   cosmetics text,
   skill int,
+  radiant_team_id int,
+  dire_team_id int,
 );
 
 CREATE TABLE IF NOT EXISTS player_matches (
@@ -76,6 +78,7 @@ CREATE TABLE IF NOT EXISTS player_matches (
   kills_log text,
   buyback_log text,
   runes_log text,
+  connection_log text,
   lane_pos text,
   obs text,
   sen text,

@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS player_matches (
   kills_log json[],
   buyback_log json[],
   runes_log json[],
+  connection_log json[],
   lane_pos json,
   obs json,
   sen json,
@@ -161,7 +162,7 @@ CREATE TABLE IF NOT EXISTS players (
   */
 );
 CREATE INDEX IF NOT EXISTS players_cheese_idx on players(cheese) WHERE cheese IS NOT NULL AND cheese > 0;
-CREATE INDEX IF NOT EXISTS players_personaname_idx on players USING GIN(personaname gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS players_personaname_idx_gin ON players USING GIN(personaname gin_trgm_ops);
 
 CREATE TABLE IF NOT EXISTS player_ratings (
   PRIMARY KEY(account_id, time),
@@ -182,18 +183,27 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 CREATE INDEX IF NOT EXISTS subscriptions_account_id_idx on subscriptions(account_id);
 CREATE INDEX IF NOT EXISTS subscriptions_customer_id_idx on subscriptions(customer_id);
 
+CREATE TABLE IF NOT EXISTS webhooks (
+  PRIMARY KEY(hook_id),
+  hook_id uuid UNIQUE,
+  account_id bigint,
+  url text NOT NULL,
+  subscriptions jsonb NOT NULL
+);
+CREATE INDEX IF NOT EXISTS webhooks_account_id_idx on webhooks(account_id);
+
 CREATE TABLE IF NOT EXISTS api_keys (
   PRIMARY KEY(account_id),
   account_id bigint UNIQUE,
   api_key uuid UNIQUE,
-  customer_id varchar(255)
+  customer_id text NOT NULL,
+  subscription_id text NOT NULL
 );
-CREATE INDEX IF NOT EXISTS api_keys_account_id_idx on api_keys(account_id);
 
 CREATE TABLE IF NOT EXISTS api_key_usage (
-  PRIMARY KEY(account_id, api_key, timestamp),
+  PRIMARY KEY(account_id, api_key, ip, timestamp),
   account_id bigint REFERENCES api_keys(account_id),
-  customer_id varchar(255),
+  customer_id text,
   api_key uuid,
   usage_count bigint,
   ip text,
@@ -456,15 +466,13 @@ CREATE TABLE IF NOT EXISTS scenarios (
   hero_id smallint,
   item text,
   time integer,
-  pings integer,
   lane_role smallint,
   games bigint DEFAULT 1,
   wins bigint,
   epoch_week integer,
   UNIQUE (hero_id, item, time, epoch_week),
-  UNIQUE (pings, time, epoch_week),
   UNIQUE (hero_id, lane_role, time, epoch_week)
-); 
+);
 
 CREATE TABLE IF NOT EXISTS team_scenarios (
   scenario text,
@@ -474,7 +482,7 @@ CREATE TABLE IF NOT EXISTS team_scenarios (
   wins bigint,
   epoch_week integer,
   UNIQUE (scenario, is_radiant, region, epoch_week)
-);  
+);
 
 DO $$
 BEGIN
@@ -493,6 +501,7 @@ BEGIN
         GRANT SELECT ON public_matches TO readonly;
         GRANT SELECT ON public_player_matches TO readonly;
         GRANT SELECT ON players TO readonly;
+        GRANT SELECT ON team_rating TO readonly;
     END IF;
 END
 $$;

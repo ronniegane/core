@@ -2,9 +2,9 @@ const vdf = require('simple-vdf');
 const async = require('async');
 const db = require('../store/db');
 const utility = require('../util/utility');
-
-const invokeInterval = utility.invokeInterval;
 const queries = require('../store/queries');
+
+const { invokeInterval, cleanItemSchema } = utility;
 
 function doCosmetics(cb) {
   utility.getData(
@@ -16,7 +16,7 @@ function doCosmetics(cb) {
       if (err) {
         return cb(err);
       }
-      const itemData = vdf.parse(body);
+      const itemData = vdf.parse(cleanItemSchema(body));
       console.log(Object.keys(itemData.items_game.items).length);
       return async.eachLimit(Object.keys(itemData.items_game.items), 5, (itemId, cb) => {
         const item = itemData.items_game.items[itemId];
